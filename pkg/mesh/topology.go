@@ -16,15 +16,17 @@ package mesh
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sort"
 	"time"
+	"encoding/json"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
-
 	"github.com/squat/kilo/pkg/wireguard"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+	"os"
 )
 
 const (
@@ -95,8 +97,9 @@ type segment struct {
 	allowedLocationIPs []net.IPNet
 }
 
-// NewTopology creates a new Topology struct from a given set of nodes and peers.
 func NewTopology(nodes map[string]*Node, peers map[string]*Peer, granularity Granularity, hostname string, port int, key wgtypes.Key, subnet *net.IPNet, serviceCIDRs []*net.IPNet, persistentKeepalive time.Duration, logger log.Logger) (*Topology, error) {
+	level.Info(logger).Log("----topology", "NewTopology")
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -162,7 +165,7 @@ func NewTopology(nodes map[string]*Node, peers map[string]*Peer, granularity Gra
 			// - the node's internal IP
 			// - IPs that were specified by the allowed-location-ips annotation
 			if node.Subnet != nil {
-				allowedIPs = append(allowedIPs, *node.Subnet)
+				allowedIPs = node.AllowedLocationIPs
 			}
 			for _, ip := range node.AllowedLocationIPs {
 				if _, ok := allowedLocationIPsMap[ip.String()]; !ok {
@@ -239,36 +242,45 @@ func NewTopology(nodes map[string]*Node, peers map[string]*Peer, granularity Gra
 		}
 		// Check for intersecting IPs in allowed location IPs
 		segment.allowedLocationIPs = t.filterAllowedLocationIPs(segment.allowedLocationIPs, segment.location)
+        allowedLocationIPsStr := ""
+        for _, ipNet := range segment.allowedLocationIPs {
+            allowedLocationIPsStr += ipNet.String() + ", "
+        }
+        level.Info(t.logger).Log("topology", "NewTopology-------- allowedLocationIPs "+allowedLocationIPsStr)
 	}
 
 	level.Debug(t.logger).Log("msg", "generated topology", "location", t.location, "hostname", t.hostname, "wireGuardIP", t.wireGuardCIDR, "privateIP", t.privateIP, "subnet", t.subnet, "leader", t.leader)
 	return &t, nil
 }
 
-func intersect(n1, n2 net.IPNet) bool {
-	return n1.Contains(n2.IP) || n2.Contains(n1.IP)
-}
+// func intersect(n1, n2 net.IPNet) bool {
+// 	return n1.Contains(n2.IP) || n2.Contains(n1.IP)
+// }
 
 func (t *Topology) filterAllowedLocationIPs(ips []net.IPNet, location string) (ret []net.IPNet) {
+
+	level.Info(t.logger).Log("----topology", "filterAllowedLocationIPs")
+
 CheckIPs:
 	for _, ip := range ips {
 		for _, s := range t.segments {
 			// Check if allowed location IPs are also allowed in other locations.
-			if location != s.location {
-				for _, i := range s.allowedLocationIPs {
-					if intersect(ip, i) {
-						level.Warn(t.logger).Log("msg", "overlapping allowed location IPnets", "IP", ip.String(), "IP2", i.String(), "segment-location", s.location)
-						continue CheckIPs
-					}
-				}
-			}
+// 			if location != s.location {
+// 				for _, i := range s.allowedLocationIPs {
+// 					level.Info(t.logger).Log("topology", "AHIHIHIHI-----1111 allowedLocationIPs "+i.String())
+// 					if intersect(ip, i) {
+// 						level.Warn(t.logger).Log("msg", "overlapping allowed location IPnets", "IP", ip.String(), "IP2", i.String(), "segment-location", s.location)
+// 						continue CheckIPs
+// 					}
+// 				}
+// 			}
 			// Check if allowed location IPs intersect with the allowed IPs.
-			for _, i := range s.allowedIPs {
-				if intersect(ip, i) {
-					level.Warn(t.logger).Log("msg", "overlapping allowed location IPnet with allowed IPnets", "IP", ip.String(), "IP2", i.String(), "segment-location", s.location)
-					continue CheckIPs
-				}
-			}
+// 			for _, i := range s.allowedIPs {
+// 				if intersect(ip, i) {
+					//		level.Warn(t.logger).Log("msg", "overlapping allowed location IPnet with allowed IPnets", "IP", ip.String(), "IP2", i.String(), "segment-location", s.location)
+					//		continue CheckIPs
+// 				}
+// 			}
 			// Check if allowed location IPs intersect with the private IPs of the segment.
 			for _, i := range s.privateIPs {
 				if ip.Contains(i) {
@@ -278,20 +290,23 @@ CheckIPs:
 			}
 		}
 		// Check if allowed location IPs intersect with allowed IPs of peers.
-		for _, p := range t.peers {
-			for _, i := range p.AllowedIPs {
-				if intersect(ip, i) {
-					level.Warn(t.logger).Log("msg", "overlapping allowed location IPnet with peer IPnet", "IP", ip.String(), "IP2", i.String(), "peer", p.Name)
-					continue CheckIPs
-				}
-			}
-		}
+// 		for _, p := range t.peers {
+// 			for _, i := range p.AllowedIPs {
+// 				if intersect(ip, i) {
+// 					level.Warn(t.logger).Log("msg", "overlapping allowed location IPnet with peer IPnet", "IP", ip.String(), "IP2", i.String(), "peer", p.Name)
+// 					continue CheckIPs
+// 				}
+// 			}
+// 		}
+
+		level.Info(t.logger).Log("topology",location+ " AHIHIHIHI-----3333 iplocation "+ip.String())
 		ret = append(ret, ip)
 	}
 	return
 }
 
 func (t *Topology) updateEndpoint(endpoint *wireguard.Endpoint, key wgtypes.Key, persistentKeepalive *time.Duration) *wireguard.Endpoint {
+	level.Info(t.logger).Log("----topology", "updateEndpoint")
 	// Do not update non-nat peers
 	if persistentKeepalive == nil || *persistentKeepalive == time.Duration(0) {
 		return endpoint
@@ -303,8 +318,45 @@ func (t *Topology) updateEndpoint(endpoint *wireguard.Endpoint, key wgtypes.Key,
 	return endpoint
 }
 
+func (t *Topology) String() string {
+	return fmt.Sprintf("Topology(key: %v, port: %d, location: %s, segments: %v, peers: %v)",
+		t.key, t.port, t.location, t.segments, t.peers)
+}
+
+func (s *segment) String() string {
+	allowedIPsStr := ""
+	for _, ip := range s.allowedIPs {
+		allowedIPsStr += ip.String() + ", "
+	}
+
+	cidrsStr := ""
+	for _, cidr := range s.cidrs {
+		cidrsStr += cidr.String() + ", "
+	}
+
+	privateIPsStr := ""
+	for _, ip := range s.privateIPs {
+		privateIPsStr += ip.String() + ", "
+	}
+
+	allowedLocationIPsStr := ""
+	for _, locIP := range s.allowedLocationIPs {
+		allowedLocationIPsStr += locIP.String() + ", "
+	}
+
+	return fmt.Sprintf("Segment(location: %s, endpoint: %v, key: %v, persistentKeepalive: %v, "+
+		"allowedIPs: [%s], cidrs: [%s], hostnames: %v, leader: %d, privateIPs: [%s], "+
+		"wireGuardIP: %v, allowedLocationIPs: [%s])",
+		s.location, s.endpoint, s.key, s.persistentKeepalive,
+		allowedIPsStr, cidrsStr, s.hostnames, s.leader, privateIPsStr,
+		s.wireGuardIP, allowedLocationIPsStr)
+}
+
 // Conf generates a WireGuard configuration file for a given Topology.
 func (t *Topology) Conf() *wireguard.Conf {
+	level.Info(t.logger).Log("----topology", "Conf() *wireguard.Conf")
+	level.Info(t.logger).Log("----topology", "Conf() "+t.String())
+
 	c := &wireguard.Conf{
 		Config: wgtypes.Config{
 			PrivateKey:   &t.key,
@@ -316,9 +368,21 @@ func (t *Topology) Conf() *wireguard.Conf {
 		if s.location == t.location {
 			continue
 		}
+        var okIps []net.IPNet
+        if len(s.allowedLocationIPs) > 0 {
+             okIps = s.allowedLocationIPs
+         } else {
+             okIps = s.allowedIPs
+         }
+        debugStr := ""
+        for _, ipNet := range okIps {
+            debugStr += ipNet.String() + ", "
+        }
+        level.Info(t.logger).Log("topology", "wireguard.Conf222----- "+debugStr)
+
 		peer := wireguard.Peer{
 			PeerConfig: wgtypes.PeerConfig{
-				AllowedIPs:                  append(s.allowedIPs, s.allowedLocationIPs...),
+				AllowedIPs: okIps,
 				PersistentKeepaliveInterval: &t.persistentKeepalive,
 				PublicKey:                   s.key,
 				ReplaceAllowedIPs:           true,
@@ -327,25 +391,14 @@ func (t *Topology) Conf() *wireguard.Conf {
 		}
 		c.Peers = append(c.Peers, peer)
 	}
-	for _, p := range t.peers {
-		peer := wireguard.Peer{
-			PeerConfig: wgtypes.PeerConfig{
-				AllowedIPs:                  p.AllowedIPs,
-				PersistentKeepaliveInterval: &t.persistentKeepalive,
-				PresharedKey:                p.PresharedKey,
-				PublicKey:                   p.PublicKey,
-				ReplaceAllowedIPs:           true,
-			},
-			Endpoint: t.updateEndpoint(p.Endpoint, p.PublicKey, p.PersistentKeepaliveInterval),
-		}
-		c.Peers = append(c.Peers, peer)
-	}
+
 	return c
 }
 
 // AsPeer generates the WireGuard peer configuration for the local location of the given Topology.
 // This configuration can be used to configure this location as a peer of another WireGuard interface.
 func (t *Topology) AsPeer() *wireguard.Peer {
+	level.Info(t.logger).Log("----topology", "AsPeer() *wireguard.Peer")
 	for _, s := range t.segments {
 		if s.location != t.location {
 			continue
@@ -362,8 +415,8 @@ func (t *Topology) AsPeer() *wireguard.Peer {
 	return nil
 }
 
-// PeerConf generates a WireGuard configuration file for a given peer in a Topology.
 func (t *Topology) PeerConf(name string) *wireguard.Conf {
+	level.Info(t.logger).Log("----topology", "PeerConf(name string) *wireguard.Conf")
 	var pka *time.Duration
 	var psk *wgtypes.Key
 	for i := range t.peers {
@@ -374,7 +427,13 @@ func (t *Topology) PeerConf(name string) *wireguard.Conf {
 		}
 	}
 	c := &wireguard.Conf{}
+	var okIps []net.IPNet
+
 	for _, s := range t.segments {
+		level.Info(t.logger).Log("vinhtn", s)
+		if okIps == nil {
+			okIps = s.allowedLocationIPs
+		}
 		peer := wireguard.Peer{
 			PeerConfig: wgtypes.PeerConfig{
 				AllowedIPs:                  append(s.allowedIPs, s.allowedLocationIPs...),
@@ -386,13 +445,22 @@ func (t *Topology) PeerConf(name string) *wireguard.Conf {
 		}
 		c.Peers = append(c.Peers, peer)
 	}
+
+	debugStr := ""
+	for _, ipNet := range okIps {
+		debugStr += ipNet.String() + ", "
+	}
+	level.Info(t.logger).Log("topology", "DM----- "+debugStr)
+
 	for i := range t.peers {
 		if t.peers[i].Name == name {
 			continue
 		}
+		level.Info(t.logger).Log("vinhtn2", t.peers[i])
+
 		peer := wireguard.Peer{
 			PeerConfig: wgtypes.PeerConfig{
-				AllowedIPs:                  t.peers[i].AllowedIPs,
+				AllowedIPs:                  okIps,
 				PersistentKeepaliveInterval: pka,
 				PublicKey:                   t.peers[i].PublicKey,
 			},
@@ -414,6 +482,8 @@ func oneAddressCIDR(ip net.IP) *net.IPNet {
 // or the first node in the segment if none have volunteered,
 // always preferring those with a public external IP address,
 func findLeader(nodes []*Node) int {
+	var logger = log.NewJSONLogger(log.NewSyncWriter(os.Stdout))
+	level.Info(logger).Log("----topology", "findLeader")
 	var leaders, public []int
 	for i := range nodes {
 		if nodes[i].Leader {
@@ -437,6 +507,8 @@ func findLeader(nodes []*Node) int {
 }
 
 func deduplicatePeerIPs(peers []*Peer) []*Peer {
+	var logger = log.NewJSONLogger(log.NewSyncWriter(os.Stdout))
+	level.Info(logger).Log("----topology", "deduplicatePeerIPs")
 	ps := make([]*Peer, len(peers))
 	ips := make(map[string]struct{})
 	for i, peer := range peers {
@@ -460,5 +532,8 @@ func deduplicatePeerIPs(peers []*Peer) []*Peer {
 		}
 		ps[i] = &p
 	}
+
+	jsonData, _ := json.Marshal(ps)
+    level.Info(logger).Log("Topology Conf"," DeduplicateIPs ...... " + string(jsonData))
 	return ps
 }

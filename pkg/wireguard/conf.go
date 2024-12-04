@@ -22,7 +22,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
-
+	"log"
+	"encoding/json"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -51,6 +52,7 @@ type Conf struct {
 
 // WGConfig returns a wgytpes.Config from a Conf.
 func (c *Conf) WGConfig() wgtypes.Config {
+	log.Print("wireguard Conf","WGConfig() wgtypes.Config ")
 	if c == nil {
 		// The empty Config will do nothing, when applied.
 		return wgtypes.Config{}
@@ -59,12 +61,22 @@ func (c *Conf) WGConfig() wgtypes.Config {
 	wgPs := make([]wgtypes.PeerConfig, len(c.Peers))
 	for i, p := range c.Peers {
 		wgPs[i] = p.PeerConfig
+        jsonData, _ := json.Marshal(wgPs)
+        log.Print("wireguard Conf"," String 0 ...... " + string(jsonData))
 		if p.Endpoint.Resolved() {
 			// We can ingore the error because we already checked if the Endpoint was resolved in the above line.
 			wgPs[i].Endpoint, _ = p.Endpoint.UDPAddr(false)
 		}
 		wgPs[i].ReplaceAllowedIPs = true
+
+        allowedLocationIPsStr := ""
+        for _, locIP := range wgPs[i].AllowedIPs {
+            allowedLocationIPsStr += locIP.String() + ", "
+        }
+        log.Print("wireguard Conf"," Stsring 1 ...... " + allowedLocationIPsStr)
 	}
+	jsonData, _ := json.Marshal(wgPs)
+    log.Print("wireguard Conf"," String 2 ...... " + string(jsonData))
 	r.Peers = wgPs
 	r.ReplacePeers = true
 	return r
@@ -80,6 +92,7 @@ type Endpoint struct {
 // The input should look like "10.0.0.0:100", "[ff10::10]:100"
 // or "example.com:100".
 func ParseEndpoint(endpoint string) *Endpoint {
+	log.Print("wireguard Conf"," ParseEndpoint " + endpoint)
 	if len(endpoint) == 0 {
 		return nil
 	}
@@ -117,6 +130,8 @@ func ParseEndpoint(endpoint string) *Endpoint {
 
 // NewEndpointFromUDPAddr returns an Endpoint from a net.UDPAddr.
 func NewEndpointFromUDPAddr(u *net.UDPAddr) *Endpoint {
+	log.Print("wireguard Conf "," NewEndpointFromUDPAddr")
+
 	if u != nil {
 		u.IP = cutIP(u.IP)
 	}
@@ -127,6 +142,8 @@ func NewEndpointFromUDPAddr(u *net.UDPAddr) *Endpoint {
 
 // NewEndpoint returns an Endpoint from a net.IP and port.
 func NewEndpoint(ip net.IP, port int) *Endpoint {
+	log.Print("wireguard Conf "," NewEndpoint")
+
 	return &Endpoint{
 		udpAddr: &net.UDPAddr{
 			IP:   cutIP(ip),
@@ -182,6 +199,8 @@ func (e *Endpoint) Resolved() bool {
 // UDPAddr returns the UDPAddr of the Endpoint. If resolve is false,
 // UDPAddr() will not try to resolve a DN name, if the Endpoint is not yet resolved.
 func (e *Endpoint) UDPAddr(resolve bool) (*net.UDPAddr, error) {
+	log.Print("wireguard Conf "," UDPAddr")
+
 	if !e.Ready() {
 		return nil, errors.New("endpoint is not ready")
 	}
@@ -244,6 +263,8 @@ type Peer struct {
 
 // DeduplicateIPs eliminates duplicate allowed IPs.
 func (p *Peer) DeduplicateIPs() {
+	log.Print("wireguard Conf"," DeduplicateIPs")
+
 	var ips []net.IPNet
 	seen := make(map[string]struct{})
 	for _, ip := range p.AllowedIPs {
@@ -253,11 +274,13 @@ func (p *Peer) DeduplicateIPs() {
 		ips = append(ips, ip)
 		seen[ip.String()] = struct{}{}
 	}
+	jsonData, _ := json.Marshal(ips)
+    log.Print("wireguard Conf"," DeduplicateIPs ...... " + string(jsonData))
 	p.AllowedIPs = ips
 }
 
-// Bytes renders a WireGuard configuration to bytes.
 func (c *Conf) Bytes() ([]byte, error) {
+    log.Print("wireguard Conf "," CONF.GO failed to write listen port")
 	if c == nil {
 		return nil, nil
 	}
@@ -382,6 +405,10 @@ func cutIP(ip net.IP) net.IP {
 }
 
 func writeAllowedIPs(buf *bytes.Buffer, ais []net.IPNet) error {
+	log.Print("wireguard Conf"," writeAllowedIPs")
+	jsonData, _ := json.Marshal(ais)
+    log.Print("wireguard Conf"," writeAllowedIPs ...... " + string(jsonData))
+
 	if len(ais) == 0 {
 		return nil
 	}

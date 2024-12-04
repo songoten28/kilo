@@ -16,6 +16,7 @@ package mesh
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 
@@ -76,6 +77,11 @@ type Node struct {
 	DiscoveredEndpoints map[string]*net.UDPAddr
 	AllowedLocationIPs  []net.IPNet
 	Granularity         Granularity
+}
+
+func (n *Node) String() string {
+	return fmt.Sprintf("Node(Name: %s, Location: %s, Leader: %t, InternalIP: %v, Subnet: %v, WireGuardIP: %v, AllowedLocationIPs: %v)",
+		n.Name, n.Location, n.Leader, n.InternalIP, n.Subnet, n.WireGuardIP, n.AllowedLocationIPs)
 }
 
 // Ready indicates whether or not the node is ready.

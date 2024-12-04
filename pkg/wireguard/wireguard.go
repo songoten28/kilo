@@ -19,7 +19,7 @@ package wireguard
 
 import (
 	"fmt"
-
+	"log"
 	"github.com/vishvananda/netlink"
 )
 
@@ -44,6 +44,8 @@ func (w wgLink) Type() string {
 // Otherwise, a new interface is created.
 // The function also returns a boolean to indicate if the interface was created.
 func New(name string, mtu uint) (int, bool, error) {
+	log.Print("wireguard","New")
+
 	link, err := netlink.LinkByName(name)
 	if err == nil {
 		return link.Attrs().Index, false, nil

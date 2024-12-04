@@ -328,6 +328,10 @@ func sync(table *route.Table, peerName string, privateKey wgtypes.Key, iface int
 	subnet.IP = subnet.IP.Mask(subnet.Mask)
 	sort.Strings(nodeNames)
 	nodes[nodeNames[0]].AllowedLocationIPs = append(nodes[nodeNames[0]].AllowedLocationIPs, connectOpts.allowedIPs...)
+	for d, node := range nodes {
+		level.Info(logger).Log("connect Linux", "sync", d+" diff "+node.String())
+	}
+
 	peers := make(map[string]*mesh.Peer)
 	for _, p := range ps {
 		if p.Ready() {

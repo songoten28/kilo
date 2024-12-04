@@ -198,7 +198,6 @@ func (nb *nodeBackend) Init(ctx context.Context) error {
 	return nil
 }
 
-// List gets all the Nodes in the cluster.
 func (nb *nodeBackend) List() ([]*mesh.Node, error) {
 	ns, err := nb.lister.List(labels.Everything())
 	if err != nil {
@@ -341,6 +340,12 @@ func translateNode(node *v1.Node, topologyLabel string) *mesh.Node {
 
 	// TODO log some error or warning.
 	key, _ := wgtypes.ParseKey(node.ObjectMeta.Annotations[keyAnnotationKey])
+
+	allowedLocationIPsStr := ""
+	for _, ipNet := range allowedLocationIPs {
+		allowedLocationIPsStr += ipNet.String() + ", "
+	}
+	level.Info(logger).Log("backend", "----- "+allowedLocationIPsStr+" location "+location)
 
 	return &mesh.Node{
 		// Endpoint and InternalIP should only ever fail to parse if the

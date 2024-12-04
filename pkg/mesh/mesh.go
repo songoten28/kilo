@@ -25,7 +25,6 @@ import (
 	"os"
 	"sync"
 	"time"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -90,6 +89,8 @@ type Mesh struct {
 
 // New returns a new Mesh instance.
 func New(backend Backend, enc encapsulation.Encapsulator, granularity Granularity, hostname string, port int, subnet *net.IPNet, local, cni bool, cniPath, iface string, cleanup bool, cleanUpIface bool, createIface bool, mtu uint, resyncPeriod time.Duration, prioritisePrivateAddr, iptablesForwardRule bool, serviceCIDRs []*net.IPNet, logger log.Logger, registerer prometheus.Registerer) (*Mesh, error) {
+	level.Info(logger).Log("----", "New")
+
 	if err := os.MkdirAll(kiloPath, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create directory to store configuration: %v", err)
 	}
@@ -226,6 +227,8 @@ func New(backend Backend, enc encapsulation.Encapsulator, granularity Granularit
 
 // Run starts the mesh.
 func (m *Mesh) Run(ctx context.Context) error {
+	level.Info(m.logger).Log("----", "Run")
+
 	if err := m.Nodes().Init(ctx); err != nil {
 		return fmt.Errorf("failed to initialize node backend: %v", err)
 	}
@@ -331,6 +334,8 @@ func (m *Mesh) syncNodes(ctx context.Context, e *NodeEvent) {
 }
 
 func (m *Mesh) syncPeers(e *PeerEvent) {
+	level.Info(m.logger).Log("----mesh", "syncPeers")
+
 	logger := log.With(m.logger, "event", e.Type)
 	level.Debug(logger).Log("msg", "syncing peers", "event", e.Type)
 	var diff bool
@@ -368,6 +373,8 @@ func (m *Mesh) syncPeers(e *PeerEvent) {
 // checkIn will try to update the local node's LastSeen timestamp
 // in the backend.
 func (m *Mesh) checkIn(ctx context.Context) {
+	level.Info(m.logger).Log("----mesh", "checkIn")
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n := m.nodes[m.hostname]
@@ -388,6 +395,8 @@ func (m *Mesh) checkIn(ctx context.Context) {
 }
 
 func (m *Mesh) handleLocal(ctx context.Context, n *Node) {
+	level.Info(m.logger).Log("----mesh", "handleLocal")
+
 	// Allow the IPs to be overridden.
 	if !n.Endpoint.Ready() {
 		e := wireguard.NewEndpoint(m.externalIP.IP, m.port)
@@ -441,6 +450,7 @@ func (m *Mesh) handleLocal(ctx context.Context, n *Node) {
 }
 
 func (m *Mesh) applyTopology() {
+	level.Info(m.logger).Log("----mesh", "applyTopology")
 	m.reconcileCounter.Inc()
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -564,7 +574,7 @@ func (m *Mesh) applyTopology() {
 		equal, diff := conf.Equal(wgDevice)
 		if !equal {
 			level.Info(m.logger).Log("msg", "WireGuard configurations are different", "diff", diff)
-			level.Debug(m.logger).Log("msg", "changing wg config", "config", conf.WGConfig())
+			level.Info(m.logger).Log("msg", "changing wg config", "config", conf.WGConfig())
 			if err := wgClient.ConfigureDevice(m.kiloIfaceName, conf.WGConfig()); err != nil {
 				level.Error(m.logger).Log("error", err)
 				m.errorCounter.WithLabelValues("apply").Inc()
@@ -632,6 +642,7 @@ func (m *Mesh) cleanUp() {
 }
 
 func (m *Mesh) resolveEndpoints() error {
+	level.Info(m.logger).Log("----mesh", "resolveEndpoints")
 	for k := range m.nodes {
 		// Skip unready nodes, since they will not be used
 		// in the topology anyways.
@@ -806,6 +817,8 @@ func linkByIndex(index int) (netlink.Link, error) {
 // discoverNATEndpoints uses the node's WireGuard configuration to returns a list of the most recently discovered endpoints for all nodes and peers behind NAT so that they can roam.
 // Discovered endpionts will never be DNS names, because WireGuard will always resolve them to net.UDPAddr.
 func discoverNATEndpoints(nodes map[string]*Node, peers map[string]*Peer, conf *wgtypes.Device, logger log.Logger) map[string]*net.UDPAddr {
+	level.Info(logger).Log("----mesh", "discoverNATEndpoints")
+
 	natEndpoints := make(map[string]*net.UDPAddr)
 	keys := make(map[string]wgtypes.Peer)
 	for i := range conf.Peers {
@@ -813,7 +826,7 @@ func discoverNATEndpoints(nodes map[string]*Node, peers map[string]*Peer, conf *
 	}
 	for _, n := range nodes {
 		if peer, ok := keys[n.Key.String()]; ok && n.PersistentKeepalive != time.Duration(0) {
-			level.Debug(logger).Log("msg", "WireGuard Update NAT Endpoint", "node", n.Name, "endpoint", peer.Endpoint, "former-endpoint", n.Endpoint, "same", peer.Endpoint.String() == n.Endpoint.String(), "latest-handshake", peer.LastHandshakeTime)
+			level.Info(logger).Log("msg", "WireGuard Update NAT Endpoint", "node", n.Name, "endpoint", peer.Endpoint, "former-endpoint", n.Endpoint, "same", peer.Endpoint.String() == n.Endpoint.String(), "latest-handshake", peer.LastHandshakeTime)
 			// Don't update the endpoint, if there was never any handshake.
 			if !peer.LastHandshakeTime.Equal(time.Time{}) {
 				natEndpoints[n.Key.String()] = peer.Endpoint
